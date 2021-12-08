@@ -95,9 +95,15 @@ pub mod nft_candy_machine {
             )?;
         }
 
+        // unpredictable mint index
+        let salt = (clock.unix_timestamp as usize) % candy_machine.data.indices_available.len();
+        let mint_index = candy_machine.data.indices_available.swap_remove(salt);
+
+        msg!("Going to mint index {}", mint_index);
+
         let config_line = get_config_line(
             &config.to_account_info(),
-            candy_machine.items_redeemed as usize,
+            mint_index as usize,
         )?;
 
         candy_machine.items_redeemed = candy_machine
@@ -382,6 +388,8 @@ pub mod nft_candy_machine {
         candy_machine.authority = *ctx.accounts.authority.key;
         candy_machine.config = ctx.accounts.config.key();
         candy_machine.bump = bump;
+        candy_machine.data.indices_available = (0..candy_machine.data.items_available as u32).collect();
+
         if ctx.remaining_accounts.len() > 0 {
             let token_mint_info = &ctx.remaining_accounts[0];
             let _token_mint: Mint = assert_initialized(&token_mint_info)?;
@@ -549,6 +557,7 @@ pub struct CandyMachineData {
     pub price: u64,
     pub items_available: u64,
     pub go_live_date: Option<i64>,
+    pub indices_available: Vec<u32>,
 }
 
 pub const CONFIG_ARRAY_START: usize = 32 + // authority

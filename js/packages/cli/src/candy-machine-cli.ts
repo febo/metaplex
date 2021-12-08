@@ -710,7 +710,7 @@ programCommand('create_candy_machine')
       if (treasuryBalance === 0) {
         throw new Error(`Cannot use treasury account with 0 balance!`);
       }
-      wallet = treasuryAccount
+      wallet = treasuryAccount;
     }
 
     const config = new PublicKey(cacheContent.program.config);
@@ -725,6 +725,7 @@ programCommand('create_candy_machine')
         price: new anchor.BN(parsedPrice),
         itemsAvailable: new anchor.BN(Object.keys(cacheContent.items).length),
         goLiveDate: null,
+        indicesAvailable: [],
       },
       {
         accounts: {
