@@ -95,9 +95,15 @@ pub mod nft_candy_machine {
             )?;
         }
 
+        let mint_value = get_mint_value(
+            &config.to_account_info(),
+            (clock.unix_timestamp as usize) % (candy_machine.data.items_available - candy_machine.items_redeemed) as usize,
+            candy_machine.items_redeemed as usize,
+            candy_machine.data.items_available as usize).unwrap();
+
         let config_line = get_config_line(
             &config.to_account_info(),
-            candy_machine.items_redeemed as usize,
+            mint_value,
         )?;
 
         candy_machine.items_redeemed = candy_machine
@@ -325,6 +331,10 @@ pub mod nft_candy_machine {
             + (config.data.max_number_of_lines as usize) * CONFIG_LINE_SIZE
             + 4;
 
+        let indices_start = bit_mask_vec_start
+            + (config.data.max_number_of_lines.checked_div(8).ok_or(ErrorCode::NumericalOverflowError)? as usize)
+            + 1;
+    
         let mut new_count = current_count;
         for i in 0..fixed_config_lines.len() {
             let position = (index as usize)
@@ -357,6 +367,8 @@ pub mod nft_candy_machine {
                 new_count = new_count
                     .checked_add(1)
                     .ok_or(ErrorCode::NumericalOverflowError)?;
+                let mint_index = indices_start + (position as usize)*4;
+                data[mint_index..mint_index + 4].copy_from_slice(&u32::to_le_bytes(position as u32));
             }
         }
 
@@ -462,7 +474,7 @@ pub struct InitializeCandyMachine<'info> {
 #[derive(Accounts)]
 #[instruction(data: ConfigData)]
 pub struct InitializeConfig<'info> {
-    #[account(mut, constraint= config.to_account_info().owner == program_id && config.to_account_info().data_len() >= CONFIG_ARRAY_START+4+(data.max_number_of_lines as usize)*CONFIG_LINE_SIZE + 4 + (data.max_number_of_lines.checked_div(8).ok_or(ErrorCode::NumericalOverflowError)? as usize))]
+    #[account(mut, constraint= config.to_account_info().owner == program_id && config.to_account_info().data_len() >= CONFIG_ARRAY_START+4+(data.max_number_of_lines as usize)*CONFIG_LINE_SIZE + 4 + (data.max_number_of_lines.checked_div(8).ok_or(ErrorCode::NumericalOverflowError)? as usize) + 1 + (data.max_number_of_lines as usize)*4)]
     config: AccountInfo<'info>,
     #[account(constraint= authority.data_is_empty() && authority.lamports() > 0 )]
     authority: AccountInfo<'info>,
@@ -487,6 +499,7 @@ pub struct WithdrawFunds<'info> {
 }
 #[derive(Accounts)]
 pub struct MintNFT<'info> {
+    #[account(mut)]
     config: Account<'info, Config>,
     #[account(
         mut,
@@ -606,6 +619,37 @@ pub fn get_config_line(
     let config_line: ConfigLine = ConfigLine::try_from_slice(data_array)?;
 
     Ok(config_line)
+}
+
+pub fn get_mint_value(
+    account: &AccountInfo,
+    index: usize,
+    items_redeemed: usize,
+    items_available: usize,
+) -> core::result::Result<usize, ProgramError> {
+    // determines the beginning of the available indices array
+    let start_index =
+        CONFIG_ARRAY_START
+        + 4
+        + items_available * CONFIG_LINE_SIZE
+        + 4
+        + (items_available.checked_div(8).ok_or(ErrorCode::NumericalOverflowError)? as usize)
+        + 1;
+
+    let mut data = account.data.borrow_mut();
+    // calculates the mint index and retrieves the value at that position
+    let mint_index = start_index + index * 4;
+    let mint_value = u32::from_le_bytes([data[mint_index], data[mint_index + 1], data[mint_index + 2], data[mint_index + 3]]);
+    // calculates the last available index and retrieves the value at that position
+    let last_index = start_index + (items_available - items_redeemed - 1) * 4;
+    let last_value = u32::from_le_bytes([data[last_index], data[last_index + 1], data[last_index + 2], data[last_index + 3]]);
+    // swap_remove: this guarantees that we remove the used mint index from the available array
+    // in a constant time O(1) no matter how big the array is
+    data[mint_index..mint_index + 4].copy_from_slice(&u32::to_le_bytes(last_value));
+
+    msg!("Minting value {}", mint_value);
+
+    return Ok(mint_value as usize);
 }
 
 pub const CONFIG_LINE_SIZE: usize = 4 + MAX_NAME_LENGTH + 4 + MAX_URI_LENGTH;

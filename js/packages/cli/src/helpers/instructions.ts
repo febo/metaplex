@@ -218,7 +218,8 @@ export async function createConfigAccount(
     4 +
     configData.maxNumberOfLines.toNumber() * CONFIG_LINE_SIZE +
     4 +
-    Math.ceil(configData.maxNumberOfLines.toNumber() / 8);
+    Math.ceil(configData.maxNumberOfLines.toNumber() / 8) +
+    1 + configData.maxNumberOfLines.toNumber() * 4;
 
   return anchor.web3.SystemProgram.createAccount({
     fromPubkey: payerWallet,
